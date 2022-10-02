@@ -121,31 +121,37 @@ def transform_net(encoded_image, args, global_step):
 
     ramp_fn = lambda ramp : tf.minimum(tf.to_float(global_step) / ramp, 1.)
 
-    
+    # 一些颜色上的 拉伸变换 --COLOR BRIGHTNESS
     rnd_bri = ramp_fn(args.rnd_bri_ramp) * args.rnd_bri
     rnd_hue = ramp_fn(args.rnd_hue_ramp) * args.rnd_hue
     rnd_brightness = utils.get_rnd_brightness_tf(rnd_bri, rnd_hue, args.batch_size)
 
+    # 对jpeg 进行 一些操作  --JPEG 
     jpeg_quality = 100. - tf.random.uniform([]) * ramp_fn(args.jpeg_quality_ramp) * (100.-args.jpeg_quality)
     jpeg_factor = tf.cond(tf.less(jpeg_quality, 50), lambda: 5000. / jpeg_quality, lambda: 200. - jpeg_quality * 2) / 100. + .0001
 
+    # 随机噪声  -NOISE
     rnd_noise = tf.random.uniform([]) * ramp_fn(args.rnd_noise_ramp) * args.rnd_noise
 
+    # 对比度拉伸 --COLOR CONTRAST
     contrast_low = 1. - (1. - args.contrast_low) * ramp_fn(args.contrast_ramp)
     contrast_high = 1. + (args.contrast_high - 1.) * ramp_fn(args.contrast_ramp)
     contrast_params = [contrast_low, contrast_high]
 
+    # 似乎是 椒盐噪声 --NOISE
     rnd_sat = tf.random.uniform([]) * ramp_fn(args.rnd_sat_ramp) * args.rnd_sat
 
-    # blur
+    # BLUR 模糊
     f = utils.random_blur_kernel(probs=[.25,.25], N_blur=7,
                            sigrange_gauss=[1.,3.], sigrange_line=[.25,1.], wmin_line=3)
     encoded_image = tf.nn.conv2d(encoded_image, f, [1,1,1,1], padding='SAME')
 
+    # NOISE
     noise = tf.random_normal(shape=tf.shape(encoded_image), mean=0.0, stddev=rnd_noise, dtype=tf.float32)
     encoded_image = encoded_image + noise
     encoded_image = tf.clip_by_value(encoded_image, 0, 1)
 
+    # COLOR
     contrast_scale = tf.random_uniform(shape=[tf.shape(encoded_image)[0]], minval=contrast_params[0], maxval=contrast_params[1])
     contrast_scale = tf.reshape(contrast_scale, shape=[tf.shape(encoded_image)[0],1,1,1])
 
@@ -153,10 +159,11 @@ def transform_net(encoded_image, args, global_step):
     encoded_image = encoded_image + rnd_brightness
     encoded_image = tf.clip_by_value(encoded_image, 0, 1)
 
-
+    # WARP
     encoded_image_lum = tf.expand_dims(tf.reduce_sum(encoded_image * tf.constant([.3,.6,.1]), axis=3), 3)
     encoded_image = (1 - rnd_sat) * encoded_image + rnd_sat * encoded_image_lum
-
+    
+    # JPEG
     encoded_image = tf.reshape(encoded_image, [-1,400,400,3])
     if not args.no_jpeg:
         encoded_image = utils.jpeg_compress_decompress(encoded_image, rounding=utils.round_only_at_0, factor=jpeg_factor, downsample_c=True)
