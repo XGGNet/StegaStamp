@@ -121,6 +121,7 @@ def transform_net(encoded_image, args, global_step):
 
     ramp_fn = lambda ramp : tf.minimum(tf.to_float(global_step) / ramp, 1.)
 
+    
     rnd_bri = ramp_fn(args.rnd_bri_ramp) * args.rnd_bri
     rnd_hue = ramp_fn(args.rnd_hue_ramp) * args.rnd_hue
     rnd_brightness = utils.get_rnd_brightness_tf(rnd_bri, rnd_hue, args.batch_size)
